@@ -32,6 +32,10 @@ public:
         }
         return vector<uint32_t>(st.begin(), st.end());
     }
+	uint32_t get_prime_num()
+	{
+		return prime32Num;
+	}
 private:
 	uint32_t prime32Num;
 };

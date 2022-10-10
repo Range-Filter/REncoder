@@ -2,28 +2,35 @@
 
 using namespace std;
 
-extern int testt;
-extern stack<pair<uint64_t, uint64_t>> psr;
 extern stack<pair<uint64_t, uint64_t>> psd;
 class RENCODER
 {
 public:
     static const int
         MAX_BF_NUM = 64;
-    int
-        count,
-        hash_num;
-    uint64_t memory;
-    int k_tree = 4;
-    uint64_t L;
-    RangeBloomfilter rbf;
-    int query_level;
-    void init(uint64_t _memory,
-              int _hash_num,
-              uint64_t _L,
-              int _query_level = 64)
+    uint64_t
+        hash_num,
+        memory,
+        L,
+        query_level;
+    RangeBloomfilter *rbf;
+    RENCODER()
     {
-        count = 0;
+    }
+    RENCODER(uint64_t _hash_num, uint64_t _memory, uint64_t _L, uint64_t _query_level,RangeBloomfilter *_rbf )
+    {
+        hash_num = _hash_num;
+        memory = _memory;
+        L = _L;
+        query_level = _query_level;
+        memory = _memory;
+        rbf = _rbf;
+    }
+    void init(uint64_t _memory,
+              uint64_t _hash_num,
+              uint64_t _L,
+              uint64_t _query_level = 64)
+    {
         memory = _memory,
         hash_num = _hash_num,
         L = _L;
@@ -33,11 +40,49 @@ public:
             cout << "REncoder memory initialization fail 1.\n";
             exit(-1);
         }
-        rbf.init(_memory, hash_num);
+        rbf = new RangeBloomfilter();
+        rbf->init(_memory, hash_num);
     }
     void setQueryLevel(int _query_level)
     {
         query_level = _query_level;
+    }
+    pair<uint8_t *, size_t> serialize()
+    {
+
+        size_t len = 4 * sizeof(uint64_t);
+        auto ser = rbf->serialize();
+        len += ser.second;
+
+        uint8_t *out = new uint8_t[len];
+        uint8_t *pos = out;
+
+        memcpy(pos, &hash_num, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, &memory, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, &L, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, &query_level, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, ser.first, ser.second);
+        delete[] ser.first;
+
+        printf("REncoder serialized size: %lu\n", len);
+        return {out, len};
+    }
+    static pair<RENCODER *, size_t> deserialize(uint8_t *ser)
+    {
+        uint8_t *pos = ser;
+
+        uint64_t hash_num = ((uint64_t *)pos)[0];
+        uint64_t memory = ((uint64_t *)pos)[1];
+        uint64_t L = ((uint64_t *)pos)[2];
+        uint64_t query_level = ((uint64_t *)pos)[3];
+        pos += 4 * sizeof(uint64_t);
+        pair<RangeBloomfilter *, size_t> tmp = RangeBloomfilter::deserialize(pos);
+        size_t len = pos - ser + tmp.second;
+        return {new RENCODER(hash_num, memory, L, query_level, tmp.first), len};
     }
     int Insert_SelfAdapt(vector<uint64_t> keys, int step)
     {
@@ -52,17 +97,25 @@ public:
             {
                 Insert(keys[i], start_level);
             }
-            for (int i = 0; i < rbf.counter_num; i++)
+            for (int i = 0; i < rbf->counter_num; i++)
             {
-                uint64_t array = rbf.array[0][i];
+                uint64_t array = rbf->array[0][i];
+#ifdef USE_SIMD
                 for (int j = 0; j < 8; j++)
                 {
                     onerate += (array & 1);
                     array >>= 1;
                 }
+#else
+                for (int j = 0; j < 32; j++)
+                {
+                    onerate += (array & 1);
+                    array >>= 1;
+                }
+#endif
             }
-            onerate /= rbf.bit_per_row;
-            if (0.5 - onerate < 0.065 || onerate >= 0.5 || query_level==65)
+            onerate /= rbf->bit_per_row;
+            if (0.5 - onerate < 0.065 || onerate >= 0.5 || query_level == 65)
             {
                 break;
             }
@@ -73,6 +126,7 @@ public:
         query_level -= 1;
         return query_level;
     }
+#ifdef USE_SIMD
     void Insert(uint64_t p, uint64_t start_level)
     {
         uint64_t bt[8] = {0};
@@ -98,7 +152,7 @@ public:
             bt[0] |= sl <= 6 && el >= 6 ? (1ul << (u >> 2)) : 0;
             bt[0] |= sl <= 7 && el >= 7 ? (1ul << (u >> 3)) : 0;
             bt[0] |= sl <= 8 && el >= 8 ? (1ul << (u >> 4)) : 0;
-            rbf.insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
+            rbf->insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
             p >>= 8;
         }
     }
@@ -125,7 +179,7 @@ public:
                 bt[0] |= level >= 6 ? (1ul << (u >> 2)) : 0;
                 bt[0] |= level >= 7 ? (1ul << (u >> 3)) : 0;
                 bt[0] |= level >= 8 ? (1ul << (u >> 4)) : 0;
-                rbf.insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
+                rbf->insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
                 break;
             }
             else
@@ -144,11 +198,64 @@ public:
                 bt[0] |= (1ul << (u >> 4));
             }
             level -= 8;
-            rbf.insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
+            rbf->insertbt((p >> 8) + (L - i >> 3) * 1000000007, bt);
             p >>= 8;
         }
     }
+#else
+    void Insert(uint64_t p, uint64_t start_level)
+    {
+        uint32_t bt = 0;
+        uint64_t p0 = p;
+        p >>= (start_level - 1) / 4 * 4;
+        int si = (start_level - 1) / 4 * 4 + 4;
+        int ei = (query_level - 2) / 4 * 4 + 4;
+        for (int i = si; i <= ei; i += 4)
+        {
+            int sl = start_level - i + 4 > 0 ? start_level - i + 4 : 1;
+            int el = query_level - 1 - i + 4;
+            bt = 0;
+            uint64_t u = (p & 0x0000000FU) | 0xFFFFFFE0U;
+            bt |= sl <= 1 && el >= 1 ? (1u << u) : 0;
+            bt |= sl <= 2 && el >= 2 ? (1u << (u >> 1)) : 0;
+            bt |= sl <= 3 && el >= 3 ? (1u << (u >> 2)) : 0;
+            bt |= sl <= 4 && el >= 4 ? (1u << (u >> 3)) : 0;
+            rbf->insertbt((p >> 4) + (L - i >> 2) * 1000000007, bt);
+            p >>= 4;
+        }
+    }
+    void Insert(uint64_t p)
+    {
+        uint64_t level = query_level;
+        uint32_t bt = 0;
+        uint64_t p0 = p;
+        for (int i = 4; i <= L; i += 4)
+        {
+            bt = 0;
+            uint64_t u = (p & 0x0000000FU) | 0xFFFFFFE0U;
+            if (level <= 4)
+            {
+                bt |= level >= 1 ? (1u << u) : 0;
+                bt |= level >= 2 ? (1u << (u >> 1)) : 0;
+                bt |= level >= 3 ? (1u << (u >> 2)) : 0;
+                bt |= level >= 4 ? (1u << (u >> 3)) : 0;
+                rbf->insertbt((p >> 4) + (L - i >> 2) * 1000000007, bt);
+                break;
+            }
+            else
+            {
+                bt |= (1u << u);
+                bt |= (1u << (u >> 1));
+                bt |= (1u << (u >> 2));
+                bt |= (1u << (u >> 3));
+            }
+            level -= 4;
+            rbf->insertbt((p >> 4) + (L - i >> 2) * 1000000007, bt);
+            p >>= 4;
+        }
+    }
 
+#endif
     bool RangeQuery(uint64_t low, uint64_t high, uint64_t p = 0, uint64_t l = 1)
     {
         if (low == high)
@@ -310,6 +417,7 @@ public:
         }
         return false;
     }
+#ifdef USE_SIMD
     bool QueryRBF(uint64_t plen, uint64_t p)
     {
         if (L - plen >= query_level)
@@ -318,7 +426,7 @@ public:
         }
         uint64_t level = (plen - 1) & 7;
         uint64_t mask = 0xF << (level + 2);
-        uint64_t *bt = rbf.querybt((p >> level + 1) + (plen - level - 1 >> 3) * 1000000007);
+        uint64_t *bt = rbf->querybt((p >> level + 1) + (plen - level - 1 >> 3) * 1000000007);
         uint32_t res;
         if (level < 5)
         {
@@ -331,4 +439,17 @@ public:
         }
         return res;
     }
+#else
+    bool QueryRBF(uint64_t plen, uint64_t p)
+    {
+        if (L - plen >= query_level)
+        {
+            return true;
+        }
+        uint64_t level = (plen - 1) & 3;
+        uint64_t mask = 0xF << (level + 2);
+        uint32_t res = (rbf->querybt((p >> level + 1) + (plen - level - 1 >> 2) * 1000000007) >> (p & (~(1ll << level + 1)) | mask)) & 1;
+        return res;
+    }
+#endif
 };

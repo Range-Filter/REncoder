@@ -1,8 +1,8 @@
 #!/bin/sh
 
 
-cd workload; rm workload; cd ..
+cd workload_gen; rm workload_gen; cd ..
 
-cd src; rm main; cd ..
+cd src; rm run_workload_simd; cd ..
 
 cd data; rm *; cd ..

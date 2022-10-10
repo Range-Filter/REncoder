@@ -1,2 +1,4 @@
-workload: main.cpp
-	g++ -O2 -o main main.cpp -mcmodel=medium -mavx512f
+run_workload: run_workload.cpp
+	g++ -o run_workload run_workload.cpp -mcmodel=medium -march=native -mavx512f -O2
+run_workload_simd: run_workload.cpp
+	g++ -o run_workload_simd run_workload.cpp -mcmodel=medium -march=native -mavx512f -O2 -DUSE_SIMD
