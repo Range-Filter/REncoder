@@ -311,7 +311,7 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
     uniform_int_distribution<unsigned long long> uni_dist(0, no_of_querys);
     int empty_queries = num_queries * empty_rate;
     int exist_queries = num_queries - empty_queries;
-    for (unsigned long long i = 1; i <= empty_queries; i++) // all range queries
+    for (long long i = 1; i <= empty_queries; i++) // all range queries
     {
         // left = keys[uni_dist(gen)]+1;
         if (query_dist_type == correlated)
@@ -346,7 +346,7 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
         }
     }
 
-    for (unsigned long long i = 1; i <= exist_queries; i++) // all range queries
+    for (long long i = 1; i <= exist_queries; i++) // all range queries
     {
         double random_from_zero_to_one = uni_dist(gen) * 1.0 / no_of_querys;
         if (random_from_zero_to_one < ratio_between_point_range)
