@@ -536,6 +536,6 @@ int main(int argc, char *argv[])
         output_file.close();
         generateRangeQueries(entries_length, no_of_queries, max_range_size, ratio_between_point_range, keys, query_dist_type, correlation_degree, false, empty_rate, data_type);
     }
-    cout << (1ULL << entries_length) - 100 << endl;
+    // cout << (1ULL << entries_length) - 100 << endl;
     return 0;
 }

@@ -68,7 +68,7 @@ public:
         memcpy(pos, ser.first, ser.second);
         delete[] ser.first;
 
-        printf("REncoder serialized size: %lu\n", len);
+        printf("REncoder serialized size: %lu bytes\n", len);
         return {out, len};
     }
     static pair<RENCODER *, size_t> deserialize(uint8_t *ser)

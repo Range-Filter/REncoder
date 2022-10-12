@@ -52,8 +52,8 @@ void LoadKey()
         keys[i] = key;
     }
     sort(keys.begin(), keys.end());
-    cout << keys.front() << endl;
-    cout << keys.back() << endl;
+    // cout << keys.front() << endl;
+    // cout << keys.back() << endl;
     for (int i = 0; i < MAX_ITEM_NUM; i++)
     {
         key_set.insert(keys[i]);
@@ -85,10 +85,10 @@ void LoadQuery()
         }
         upper -= 1;
         range_queries[i] = make_pair(lower, upper);
-        if (i==0)
-        {
-            cout << range_queries[0].first << " " <<range_queries[0].second << endl;
-        }
+        // if (i==0)
+        // {
+        //     cout << range_queries[0].first << " " <<range_queries[0].second << endl;
+        // }
     }
     random_shuffle(range_queries.begin(), range_queries.end());
     leftFile.close();
@@ -110,66 +110,59 @@ void PrintEmptyRate()
 }
 void RunTest()
 {
+    int repeat = 1;
+    int hash_num = 3;
     range_queries.clear();
     key_set.clear();
     LoadKey();
     LoadQuery();
     PrintEmptyRate();
     timespec time1, time2;
-    int repeat = 3;
-    long long resns, kk, kkk = 1, QueryTestNum = 0;
+    long long resns, QueryTestNum = 0;
     double th;
     cout << "Insert " << MAX_ITEM_NUM << " items" << endl;
     uint64_t memory = (uint64_t)MAX_ITEM_NUM * BPK;
-    int hash_num = 3;
     cout << "Hash Num: " << hash_num << endl;
     cout << "Bits per Key: " << BPK << endl;
     rencoder.init(memory, hash_num, 64, QL);
-    kk = kkk;
 
     // Insertion
-    for (int k = 1; k <= kk; k++)
+    if (IF_SELF_ADAPT)
     {
-        if (IF_SELF_ADAPT)
-        {
-            int true_level = rencoder.Insert_SelfAdapt(keys, STEP);
-            cout << "L_s: " << true_level << endl;
-        }
-        else
-        {
-            for (int i = 0; i < MAX_ITEM_NUM; i++)
-            {
-                rencoder.Insert(keys[i]);
-            }
-            cout << "L_s: " << QL << endl;
-        }
+        int true_level = rencoder.Insert_SelfAdapt(keys, STEP);
+        cout << "L_s: " << true_level << endl;
     }
-    pair<uint8_t*, size_t> ser  = rencoder.serialize();
-    
+    else
+    {
+        for (int i = 0; i < MAX_ITEM_NUM; i++)
+        {
+            rencoder.Insert(keys[i]);
+        }
+        cout << "L_s: " << QL << endl;
+    }
+    pair<uint8_t *, size_t> ser = rencoder.serialize();
+
     // Range query (Filter Throughput)
     cache_hit = 0;
     query_count = 0;
-    auto start = chrono::high_resolution_clock::now();
-    kk = kkk;
     QueryTestNum = 0;
-    int ss = 0;
+    auto start = chrono::high_resolution_clock::now();
+    int res = 0;
     for (int k = 1; k <= repeat; k++)
         for (uint32_t i = 0; i < rangeQueryNum; i++)
         {
             uint64_t l = range_queries[i].first, r = range_queries[i].second;
             QueryTestNum++;
-            ss ^= rencoder.RangeQuery(l, r);
+            res ^= rencoder.RangeQuery(l, r);
         }
     auto end = chrono::high_resolution_clock::now();
     uint64_t duration = chrono::duration_cast<chrono::nanoseconds>(end - start).count();
     th = (double)1000.0 * QueryTestNum / duration;
-    printf("Filter Throughput:\t %lf Mops/s %lld\n", th, QueryTestNum);
-    printf("query cnt: %lld; cache hit: %lld; true cnt: %lld\n", query_count/repeat, cache_hit/repeat, (query_count - cache_hit)/repeat);
-    printf("%d",ss);
+    printf("Filter Throughput:\t %lf Mops/s\n", th);
+    printf("query cnt: %lld; cache hit: %lld; hit rate: %lf\n", query_count / repeat, cache_hit / repeat, cache_hit / 1.0 / query_count);
 
     // False Positive Rate
     double FPR = 0, FPRQSUM = 0;
-    FPR = 0, FPRQSUM = 0;
     for (uint32_t i = 0; i < rangeQueryNum; i++)
     {
         uint64_t l = range_queries[i].first, r = range_queries[i].second;
@@ -185,53 +178,6 @@ void RunTest()
         }
         FPRQSUM++;
         if (rencoder.RangeQuery(l, r))
-        {
-            FPR++;
-        }
-    }
-    printf("False Positive Rate:\t %lf\n", FPR / FPRQSUM);
-
-
-    // serialize
-    // Range query (Filter Throughput)
-    RENCODER * rencoder_ser = RENCODER::deserialize(ser.first).first;
-    cache_hit = 0;
-    query_count = 0;
-    start = chrono::high_resolution_clock::now();
-    kk = kkk;
-    QueryTestNum = 0;
-    ss = 0;
-    for (int k = 1; k <= repeat; k++)
-        for (uint32_t i = 0; i < rangeQueryNum; i++)
-        {
-            uint64_t l = range_queries[i].first, r = range_queries[i].second;
-            QueryTestNum++;
-            ss ^= rencoder_ser->RangeQuery(l, r);
-        }
-    end = chrono::high_resolution_clock::now();
-    duration = chrono::duration_cast<chrono::nanoseconds>(end - start).count();
-    th = (double)1000.0 * QueryTestNum / duration;
-    printf("Filter Throughput:\t %lf Mops/s %lld\n", th, QueryTestNum);
-    printf("query cnt: %lld; cache hit: %lld; true cnt: %lld\n", query_count/repeat, cache_hit/repeat, (query_count - cache_hit)/repeat);
-    printf("%d",ss);
-
-    // False Positive Rate
-    FPR = 0, FPRQSUM = 0;
-    for (uint32_t i = 0; i < rangeQueryNum; i++)
-    {
-        uint64_t l = range_queries[i].first, r = range_queries[i].second;
-        auto iter = key_set.lower_bound(range_queries[i].first);
-        if (iter != key_set.end() && (*iter) <= range_queries[i].second)
-        {
-            if (!rencoder_ser->RangeQuery(l, r))
-            {
-                cout << "Range Query Error";
-                exit(-1);
-            }
-            continue;
-        }
-        FPRQSUM++;
-        if (rencoder_ser->RangeQuery(l, r))
         {
             FPR++;
         }
@@ -261,6 +207,7 @@ int main(int argc, char *argv[])
     keys.resize(MAX_ITEM_NUM);
     range_queries.resize(rangeQueryNum);
     uint64_t memory = (uint64_t)MAX_ITEM_NUM * BPK;
+    
     RunTest();
 
     return 0;

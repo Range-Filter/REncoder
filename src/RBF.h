@@ -137,7 +137,7 @@ public:
             pos += counter_num * sizeof(uint32_t);
         }      
 #endif
-            printf("RBF serialized size: %lu\n", len);
+            printf("RBF serialized size: %lu bytes\n", len);
         return {out, len};
     }
 
