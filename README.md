@@ -19,4 +19,5 @@ REncoder is a novel range filter. It improves the performance of range queries b
 ## Build and Run
 - `bash make_all.sh` to make executable files
 - `bash run.sh` to generate dataset and run REncoder on the dataset
+- `bash test.sh` to test the correctness of REncoder 
 - `bash clean.sh` to clean dataset and executable files

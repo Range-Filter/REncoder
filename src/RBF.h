@@ -1,8 +1,10 @@
 // Range Bloom filter
 
 #include <cstdint>
+
 extern long long cache_hit;
 extern long long query_count;
+
 class RangeBloomfilter
 {
 public:
@@ -10,15 +12,17 @@ public:
         MAX_BIT_NUM = (1ll << 32) - 1,
         MAX_HASH_NUM = 8;
     uint64_t
-        hash_num, // number of hash function
+        hash_num,
         counter_num,
         bit_per_row,
         memory;
-    uint64_t BFcache4_key = -1;
+
+    // Cache the result of query.
+    uint64_t BFcache_key = -1;
 #ifdef USE_SIMD
-    uint64_t *BFcache4_value;
+    uint64_t *BFcache_value;
 #else
-    uint32_t BFcache4_value;
+    uint32_t BFcache_value;
 #endif
     BOBHash32 hash[MAX_HASH_NUM];
 #ifdef USE_SIMD
@@ -26,9 +30,13 @@ public:
 #else
     uint32_t **array;
 #endif
+
+    // Create an uninitialized Range Bloom Filter.
     RangeBloomfilter()
     {
     }
+
+    // Create an initialized Range Bloom Filter.
     RangeBloomfilter(uint64_t _hash_num, uint64_t _counter_num, uint64_t _bit_per_row, uint64_t _memory, uint8_t *_hash, uint8_t *_array)
     {
         hash_num = _hash_num;
@@ -40,14 +48,14 @@ public:
             hash[i].initialize(((uint32_t *)_hash)[i]);
         }
 #ifdef USE_SIMD
-        array = new uint8_t*[hash_num];
+        array = new uint8_t *[hash_num];
         for (int i = 0; i < hash_num; i++)
         {
             array[i] = new uint8_t[counter_num];
             memcpy(array[i], _array + i * counter_num * sizeof(uint8_t), counter_num * sizeof(uint8_t));
         }
 #else
-        array = new uint32_t*[hash_num];
+        array = new uint32_t *[hash_num];
         for (int i = 0; i < hash_num; i++)
         {
             array[i] = new uint32_t[counter_num];
@@ -55,8 +63,9 @@ public:
         }
 #endif
     }
-    void init(uint64_t _memory, // bit
-              int _hash_num)
+
+    // Initialize Range Bloom Filter.
+    void init(uint64_t _memory, int _hash_num)
     {
         srand(921224);
         memory = _memory,
@@ -84,19 +93,21 @@ public:
             hash[i].initialize(rand() % MAX_PRIME32);
         }
 #ifdef USE_SIMD
-        array = new uint8_t*[hash_num];
+        array = new uint8_t *[hash_num];
         for (int i = 0; i < hash_num; i++)
         {
             array[i] = new uint8_t[counter_num]();
         }
 #else
-        array = new uint32_t*[hash_num];
+        array = new uint32_t *[hash_num];
         for (int i = 0; i < hash_num; i++)
         {
             array[i] = new uint32_t[counter_num]();
         }
 #endif
     }
+
+    // Serialize Range Bloom Filter and get its size.
     pair<uint8_t *, size_t> serialize()
     {
         size_t len = 4 * sizeof(uint64_t) + hash_num * sizeof(uint32_t);
@@ -107,7 +118,6 @@ public:
 #endif
         uint8_t *out = new uint8_t[len];
         uint8_t *pos = out;
-
         memcpy(pos, &hash_num, sizeof(uint64_t));
         pos += sizeof(uint64_t);
         memcpy(pos, &counter_num, sizeof(uint64_t));
@@ -116,35 +126,33 @@ public:
         pos += sizeof(uint64_t);
         memcpy(pos, &memory, sizeof(uint64_t));
         pos += sizeof(uint64_t);
-
         for (int i = 0; i < hash_num; i++)
         {
             uint32_t pri_num = hash[i].get_prime_num();
             memcpy(pos, &pri_num, sizeof(uint32_t));
             pos += sizeof(uint32_t);
         }
-
 #ifdef USE_SIMD
         for (int i = 0; i < hash_num; i++)
         {
             memcpy(pos, array[i], counter_num * sizeof(uint8_t));
             pos += counter_num * sizeof(uint8_t);
-        } 
+        }
 #else
         for (int i = 0; i < hash_num; i++)
         {
             memcpy(pos, array[i], counter_num * sizeof(uint32_t));
             pos += counter_num * sizeof(uint32_t);
-        }      
+        }
 #endif
-            printf("RBF serialized size: %lu bytes\n", len);
+        // printf("RBF serialized size: %lu bytes\n", len);
         return {out, len};
     }
 
+    // Deserialize to get Range Bloom Filter.
     static pair<RangeBloomfilter *, size_t> deserialize(uint8_t *ser)
     {
         uint8_t *pos = ser;
-
         uint64_t hash_num = ((uint64_t *)pos)[0];
         uint64_t counter_num = ((uint64_t *)pos)[1];
         uint64_t bit_per_row = ((uint64_t *)pos)[2];
@@ -158,14 +166,20 @@ public:
 #endif
         return {new RangeBloomfilter(hash_num, counter_num, bit_per_row, memory, pos, pos + hash_num * sizeof(uint32_t)), len};
     }
+
 #ifdef USE_SIMD
-    void insertbt(uint64_t x, uint64_t *bt)
+    // Range Bloom Filter with SIMD.
+
+    // Insert bitmap into Range Bloom Filter.
+    void insertbt(uint64_t p, uint64_t *bt)
     {
         __m512i_u bt_new, bt_old;
         bt_new = _mm512_loadu_si512((__m512i_u *)(bt));
+
+        // Hash the prefix(p) into indices of Range Bloom Filter and inlay the bitmap.
         for (int i = 0; i < hash_num; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 3;
             bt_old = _mm512_loadu_si512((__m512i_u *)(array[i] + t));
             bt_old = _mm512_or_si512(bt_new, bt_old);
@@ -173,71 +187,82 @@ public:
         }
     }
 
-    inline uint64_t *querybt(uint64_t x)
+    // Extract the bitmap from Range Bloom Filter.
+    inline uint64_t *querybt(uint64_t p)
     {
-        static uint64_t ans[8] = {0};
-        __m512i_u ans1, ans2;
+        static uint64_t bt[8] = {0};
+        __m512i_u bt1, bt2;
         query_count++;
-        if (BFcache4_key == x)
+        if (BFcache_key == p)
         {
+            // Return the cached result.
             cache_hit++;
-            return BFcache4_value;
+            return BFcache_value;
         }
+
+        // Hash the prefix(p) into indices of Range Bloom Filter and extract the bitmap.
         for (int i = 0; i < 1; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 3;
-            ans1 = _mm512_loadu_si512((__m512i_u *)(array[i] + t));
+            bt1 = _mm512_loadu_si512((__m512i_u *)(array[i] + t));
         }
         for (int i = 1; i < hash_num; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 3;
-            ans2 = _mm512_loadu_si512((__m512i_u *)(array[i] + t));
-            ans1 = _mm512_and_si512(ans1, ans2);
+            bt2 = _mm512_loadu_si512((__m512i_u *)(array[i] + t));
+            bt1 = _mm512_and_si512(bt1, bt2);
         }
-        BFcache4_key = x;
-        _mm512_storeu_si512((__m512i_u *)(ans), ans1);
-        BFcache4_value = ans;
-        return ans;
+        BFcache_key = p;
+        _mm512_storeu_si512((__m512i_u *)(bt), bt1);
+        BFcache_value = bt;
+        return bt;
     }
 
 #else
-    void insertbt(uint64_t x, uint32_t sbm)
+    // Range Bloom Filter without SIMD.
+
+    // Insert bitmap into Range Bloom Filter.
+    void insertbt(uint64_t p, uint32_t bt)
     {
+        // Hash the prefix(p) into indices of Range Bloom Filter and inlay the bitmap.
         for (int i = 0; i < hash_num; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 5;
-            array[i][t] |= sbm << (pos & 31);
-            array[i][t] |= ((pos & 31) == 0 ? 0 : sbm >> (32 - (pos & 31)));
+            array[i][t] |= bt << (pos & 31);
+            array[i][t] |= ((pos & 31) == 0 ? 0 : bt >> (32 - (pos & 31)));
             t = 0;
         }
     }
 
-    inline uint32_t querybt(uint64_t x)
+    // Extract the bitmap from Range Bloom Filter.
+    inline uint32_t querybt(uint64_t p)
     {
         query_count++;
-        if (BFcache4_key == x)
+        if (BFcache_key == p)
         {
             cache_hit++;
-            return BFcache4_value;
+            return BFcache_value;
         }
-        uint32_t ans = 0;
+
+        // Hash the prefix(p) into indices of Range Bloom Filter and extract the bitmap.
+        uint32_t bt = 0;
         for (int i = 0; i < 1; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 5;
-            ans = array[i][t] >> (pos & 31) | ((pos & 31) == 0 ? 0 : array[i][t] << (32 - (pos & 31)));
+            bt = array[i][t] >> (pos & 31) | ((pos & 31) == 0 ? 0 : array[i][t] << (32 - (pos & 31)));
         }
         for (int i = 1; i < hash_num; i++)
         {
-            uint64_t pos = hash[i].run((char *)&x, sizeof(uint64_t)) % bit_per_row;
+            uint64_t pos = hash[i].run((char *)&p, sizeof(uint64_t)) % bit_per_row;
             uint64_t t = pos >> 5;
-            ans &= array[i][t] >> (pos & 31) | ((pos & 31) == 0 ? 0 : array[i][t] << (32 - (pos & 31)));
+            bt &= array[i][t] >> (pos & 31) | ((pos & 31) == 0 ? 0 : array[i][t] << (32 - (pos & 31)));
         }
-        BFcache4_key = x, BFcache4_value = ans;
-        return ans;
+        BFcache_key = p, BFcache_value = bt;
+        return bt;
     }
 #endif
 };

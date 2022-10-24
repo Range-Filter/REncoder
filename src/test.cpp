@@ -8,6 +8,7 @@ using namespace std;
 
 // For pretty print.
 static const char *kGreen = "\033[0;32m";
+static const char *kRed = "\033[0;31m";
 static const char *kWhite = "\033[0;0m";
 
 // Number of queries to RBF.
@@ -104,8 +105,8 @@ void LoadQuery()
     rightFile.close();
 }
 
-// Calculate and print the proportion of empty queries in all queries.
-void PrintEmptyRate()
+// Get the proportion of empty queries in all queries.
+double GetEmptyRate()
 {
     set<uint64_t>::iterator iter;
     int empty_cnt = 0;
@@ -117,36 +118,29 @@ void PrintEmptyRate()
             empty_cnt++;
         }
     }
-    printf("Empty Rate: %lf\n", empty_cnt / 1.0 / RANGE_QUERY_NUM);
+    return empty_cnt / 1.0 / RANGE_QUERY_NUM;
 }
 
 // Run the workload and print the metrics.
-void RunWorkload()
+void RunTest()
 {
-    // Number of repetitions.
-    int repeat = 3;
-
     range_queries.clear();
     key_set.clear();
 
     LoadKey();
     LoadQuery();
-    PrintEmptyRate();
+    double empty_rate = GetEmptyRate();
 
     // Initialize REncoder.
     uint64_t memory = (uint64_t)TOTAL_ITEM_NUM * BPK;
     rencoder.init(memory, HASH_NUM, 64, STORED_LEVELS);
-
-    cout << "Insert " << TOTAL_ITEM_NUM << " items" << endl;
-    cout << "Hash Num: " << HASH_NUM << endl;
-    cout << "Bits per Key: " << BPK << endl;
 
     // Insert keys into REncoder.
     if (IS_SELF_ADAPT)
     {
         // Self-adaptively choose the optimal number of stored levels.
         int true_level = rencoder.Insert_SelfAdapt(keys, SELF_ADAPT_STEP);
-        cout << "Number of stored levels: " << true_level << endl;
+        printf("Key Type = %6s\tEmpty Rate = %lf\tSelf-adapt = Yes\t", KEY_TYPE.c_str(), empty_rate);
     }
     else
     {
@@ -155,55 +149,25 @@ void RunWorkload()
         {
             rencoder.Insert(keys[i]);
         }
-        cout << "Number of stored levels: " << STORED_LEVELS << endl;
+        printf("Key Type = %6s\tEmpty Rate = %lf\tSelf-adapt = No \t", KEY_TYPE.c_str(), empty_rate);
     }
 
-    // Get the size of REncoder.
-    pair<uint8_t *, size_t> ser = rencoder.serialize();
-    printf("%sREncoder size: %.2lf MB\n%s", kGreen, ser.second / 1.0 / 1024 / 1024, kWhite);
-
-    // Get the throughput of REncoder.
-    cache_hit = 0;
-    query_count = 0;
-    long long TEST_QUERY_NUM = 0;
-    auto start = chrono::high_resolution_clock::now();
-    int res = 0;
-    for (int k = 1; k <= repeat; k++)
-        for (uint32_t i = 0; i < RANGE_QUERY_NUM; i++)
-        {
-            uint64_t l = range_queries[i].first, r = range_queries[i].second;
-            TEST_QUERY_NUM++;
-            res ^= rencoder.RangeQuery(l, r);
-        }
-    auto end = chrono::high_resolution_clock::now();
-    uint64_t duration = chrono::duration_cast<chrono::nanoseconds>(end - start).count();
-    double throughput = (double)1000.0 * TEST_QUERY_NUM / duration;
-    printf("%sFilter Throughput: %lf Mops/s\n%s", kGreen, throughput, kWhite);
-    printf("query cnt: %lld; cache hit: %lld; hit rate: %lf\n", query_count / repeat, cache_hit / repeat, cache_hit / 1.0 / query_count);
-
-    // Get the false positive rate of REncoder.
-    double FP = 0, TOTAL = 0;
+    // Test for false negatives.
     for (uint32_t i = 0; i < RANGE_QUERY_NUM; i++)
     {
         uint64_t l = range_queries[i].first, r = range_queries[i].second;
         auto iter = key_set.lower_bound(range_queries[i].first);
         if (iter != key_set.end() && (*iter) <= range_queries[i].second)
         {
-            // Test for false negatives.
             if (!rencoder.RangeQuery(l, r))
             {
-                cout << "Range Query Error (False Negative)";
+                printf("%sFail\n%s", kRed, kWhite);
                 exit(-1);
             }
             continue;
         }
-        TOTAL++;
-        if (rencoder.RangeQuery(l, r))
-        {
-            FP++;
-        }
     }
-    printf("%sFalse Positive Rate: %lf\n%s", kGreen, FP / TOTAL, kWhite);
+    printf("%sPass\n%s", kGreen, kWhite);
 }
 
 int main(int argc, char *argv[])
@@ -231,7 +195,7 @@ int main(int argc, char *argv[])
     keys.resize(TOTAL_ITEM_NUM);
     range_queries.resize(RANGE_QUERY_NUM);
 
-    RunWorkload();
+    RunTest();
 
     return 0;
 }

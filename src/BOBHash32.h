@@ -16,26 +16,28 @@ public:
 	~BOBHash32();
 	BOBHash32(uint32_t prime32Num);
 	void initialize(uint32_t prime32Num);
-	uint32_t run(const char * str, uint32_t len);	// produce a hash number
+	uint32_t run(const char *str, uint32_t len); // produce a hash number
 	static uint32_t get_random_prime_index()
 	{
 		random_device rd;
 		return rd() % MAX_PRIME32;
 	}
 
-    static vector<uint32_t> get_random_prime_index_list(int n)
-    {
-        random_device rd;
-        unordered_set<int> st;
-        while (st.size() < n) {
-            st.insert(rd() % MAX_PRIME32);
-        }
-        return vector<uint32_t>(st.begin(), st.end());
-    }
+	static vector<uint32_t> get_random_prime_index_list(int n)
+	{
+		random_device rd;
+		unordered_set<int> st;
+		while (st.size() < n)
+		{
+			st.insert(rd() % MAX_PRIME32);
+		}
+		return vector<uint32_t>(st.begin(), st.end());
+	}
 	uint32_t get_prime_num()
 	{
 		return prime32Num;
 	}
+
 private:
 	uint32_t prime32Num;
 };
@@ -45,8 +47,7 @@ uint32_t big_prime3232[MAX_BIG_PRIME32] = {
 	20297, 20323, 20327, 20333, 20341, 20347, 20353, 20357, 20359, 20369,
 	20389, 20393, 20399, 20407, 20411, 20431, 20441, 20443, 20477, 20479,
 	20483, 20507, 20509, 20521, 20533, 20543, 20549, 20551, 20563, 20593,
-	20599, 20611, 20627, 20639, 20641, 20663, 20681, 20693, 20707, 20717
-};
+	20599, 20611, 20627, 20639, 20641, 20663, 20681, 20693, 20707, 20717};
 uint32_t prime32[MAX_PRIME32] = {
 	2, 3, 5, 7, 11, 13, 17, 19, 23, 29,
 	31, 37, 41, 43, 47, 53, 59, 61, 67, 71,
@@ -171,21 +172,38 @@ uint32_t prime32[MAX_PRIME32] = {
 	9721, 9733, 9739, 9743, 9749, 9767, 9769, 9781, 9787, 9791,
 	9803, 9811, 9817, 9829, 9833, 9839, 9851, 9857, 9859, 9871,
 	9883, 9887, 9901, 9907, 9923, 9929, 9931, 9941, 9949, 9967,
-	9973
-};
+	9973};
 
-#define mix(a,b,c) \
-{ \
-  a -= b; a -= c; a ^= (c>>13); \
-  b -= c; b -= a; b ^= (a<<8); \
-  c -= a; c -= b; c ^= (b>>13); \
-  a -= b; a -= c; a ^= (c>>12);  \
-  b -= c; b -= a; b ^= (a<<16); \
-  c -= a; c -= b; c ^= (b>>5); \
-  a -= b; a -= c; a ^= (c>>3);  \
-  b -= c; b -= a; b ^= (a<<10); \
-  c -= a; c -= b; c ^= (b>>15); \
-}
+#define mix(a, b, c)    \
+	{                   \
+		a -= b;         \
+		a -= c;         \
+		a ^= (c >> 13); \
+		b -= c;         \
+		b -= a;         \
+		b ^= (a << 8);  \
+		c -= a;         \
+		c -= b;         \
+		c ^= (b >> 13); \
+		a -= b;         \
+		a -= c;         \
+		a ^= (c >> 12); \
+		b -= c;         \
+		b -= a;         \
+		b ^= (a << 16); \
+		c -= a;         \
+		c -= b;         \
+		c ^= (b >> 5);  \
+		a -= b;         \
+		a -= c;         \
+		a ^= (c >> 3);  \
+		b -= c;         \
+		b -= a;         \
+		b ^= (a << 10); \
+		c -= a;         \
+		c -= b;         \
+		c ^= (b >> 15); \
+	}
 
 BOBHash32::BOBHash32()
 {
@@ -193,70 +211,81 @@ BOBHash32::BOBHash32()
 }
 
 BOBHash32::BOBHash32(uint32_t prime32Num)
- {
+{
 	this->prime32Num = prime32Num;
 }
 
 void BOBHash32::initialize(uint32_t prime32Num)
- {
+{
 	this->prime32Num = prime32Num;
 }
 
-uint32_t BOBHash32::run(const char * str, uint32_t len)
+uint32_t BOBHash32::run(const char *str, uint32_t len)
 {
-	//register ub4 a,b,c,len;
-	uint32_t a,b,c;
-//	uint32_t initval = 0;
+	// register ub4 a,b,c,len;
+	uint32_t a, b, c;
+	//	uint32_t initval = 0;
 	/* Set up the internal state */
-	//len = length;
-	a = b = 0x9e3779b9;  /* the golden ratio; an arbitrary value */
-	c = prime32[this->prime32Num];         /* the previous hash value */
+	// len = length;
+	a = b = 0x9e3779b9;			   /* the golden ratio; an arbitrary value */
+	c = prime32[this->prime32Num]; /* the previous hash value */
 
 	/*---------------------------------------- handle most of the key */
 	while (len >= 12)
 	{
-		a += (str[0] +((uint32_t)str[1]<<8) +((uint32_t)str[2]<<16) +((uint32_t)str[3]<<24));
-		b += (str[4] +((uint32_t)str[5]<<8) +((uint32_t)str[6]<<16) +((uint32_t)str[7]<<24));
-		c += (str[8] +((uint32_t)str[9]<<8) +((uint32_t)str[10]<<16)+((uint32_t)str[11]<<24));
-		mix(a,b,c);
-		str += 12; len -= 12;
+		a += (str[0] + ((uint32_t)str[1] << 8) + ((uint32_t)str[2] << 16) + ((uint32_t)str[3] << 24));
+		b += (str[4] + ((uint32_t)str[5] << 8) + ((uint32_t)str[6] << 16) + ((uint32_t)str[7] << 24));
+		c += (str[8] + ((uint32_t)str[9] << 8) + ((uint32_t)str[10] << 16) + ((uint32_t)str[11] << 24));
+		mix(a, b, c);
+		str += 12;
+		len -= 12;
 	}
 
 	/*------------------------------------- handle the last 11 bytes */
 	c += len;
-	switch(len)              /* all the case statements fall through */
+	switch (len) /* all the case statements fall through */
 	{
-		case 11: c+=((uint32_t)str[10]<<24);
-        // fall through
-		case 10: c+=((uint32_t)str[9]<<16);
-        // fall through
-		case 9 : c+=((uint32_t)str[8]<<8);
-		/* the first byte of c is reserved for the length */
-        // fall through
-		case 8 : b+=((uint32_t)str[7]<<24);
-        // fall through
-		case 7 : b+=((uint32_t)str[6]<<16);
-        // fall through
-		case 6 : b+=((uint32_t)str[5]<<8);
-        // fall through
-		case 5 : b+=str[4];
-        // fall through
-		case 4 : a+=((uint32_t)str[3]<<24);
-        // fall through
-		case 3 : a+=((uint32_t)str[2]<<16);
-        // fall through
-		case 2 : a+=((uint32_t)str[1]<<8);
-        // fall through
-		case 1 : a+=str[0];
+	case 11:
+		c += ((uint32_t)str[10] << 24);
+	// fall through
+	case 10:
+		c += ((uint32_t)str[9] << 16);
+	// fall through
+	case 9:
+		c += ((uint32_t)str[8] << 8);
+	/* the first byte of c is reserved for the length */
+	// fall through
+	case 8:
+		b += ((uint32_t)str[7] << 24);
+	// fall through
+	case 7:
+		b += ((uint32_t)str[6] << 16);
+	// fall through
+	case 6:
+		b += ((uint32_t)str[5] << 8);
+	// fall through
+	case 5:
+		b += str[4];
+	// fall through
+	case 4:
+		a += ((uint32_t)str[3] << 24);
+	// fall through
+	case 3:
+		a += ((uint32_t)str[2] << 16);
+	// fall through
+	case 2:
+		a += ((uint32_t)str[1] << 8);
+	// fall through
+	case 1:
+		a += str[0];
 		/* case 0: nothing left to add */
 	}
-	mix(a,b,c);
+	mix(a, b, c);
 	/*-------------------------------------------- report the result */
 	return c;
 }
 
 BOBHash32::~BOBHash32()
 {
-
 }
 #endif //_BOBHASH32_H

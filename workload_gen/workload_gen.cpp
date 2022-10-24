@@ -25,13 +25,30 @@
 #include <chrono>
 
 using namespace std;
-std::string UINT64Tostring(uint64_t s)
+
+std::string UINT64Tostring(uint64_t s, bool is_bound)
 {
     char out[8];
     s = __builtin_bswap64(s);
     memcpy(out, &s, 8);
+    for (int i = 0; i < 8; i++)
+    {
+        if (is_bound)
+        {
+            if ((out[i] >= 0 && out[i] <= 32) || out[i] == 92 || out[i] == 127)
+            {
+                return "";
+            }
+        }
+        else if ((out[i] >= -1 && out[i] <= 32) || out[i] == 91 || out[i] == 92 || out[i] >= 126)
+        // if (!((out[i] >= 'a' && out[i] <= 'z') || (out[i] >= 'A' && out[i] <= 'Z')))
+        {
+            return "";
+        }
+    }
     return out;
 }
+
 // std::vector<unsigned long long> keys;
 multimap<unsigned long long, unsigned long long> lower_bound_keys;
 multimap<string, string> str_lower_bound_keys;
@@ -138,6 +155,15 @@ std::vector<unsigned long long> generateKeysUniform(unsigned long long no_of_key
     {
         // unsigned long long number = gen();
         unsigned long long number = uni_dist(gen);
+        if (data_type == "string")
+        {
+            string num = UINT64Tostring(number, false);
+            if (num == "")
+            {
+                continue;
+            }
+        }
+
         if (print)
         {
             std::cout << number << std::endl;
@@ -156,7 +182,7 @@ std::vector<unsigned long long> generateKeysUniform(unsigned long long no_of_key
             vector<string> str_keys;
             for (unsigned long long key : keys)
             {
-                str_keys.push_back(UINT64Tostring(key));
+                str_keys.push_back(UINT64Tostring(key, false));
             }
             std::ostream_iterator<string> output_iterator(output_file, "\n");
             std::copy(str_keys.begin(), str_keys.end(), output_iterator);
@@ -186,17 +212,27 @@ std::vector<unsigned long long> generateKeysNormal(unsigned long long no_of_keys
         // unsigned long long number = gen();
         unsigned long long number = (unsigned long long)nor_dist(generator);
         // cout << number << endl;
+
+        if (data_type == "string")
+        {
+            string num = UINT64Tostring(number, false);
+            if (num == "")
+            {
+                continue;
+            }
+        }
+
         if ((number >= 0.0) && (number <= upper_b))
         {
             if (print)
             {
                 std::cout << number << std::endl;
             }
-            if(key_set.find(number) == key_set.end())
+            if (key_set.find(number) == key_set.end())
             {
                 key_set.insert(number);
                 keys.push_back(number);
-            }        
+            }
         }
     }
     sort(keys.begin(), keys.end());
@@ -211,7 +247,7 @@ std::vector<unsigned long long> generateKeysNormal(unsigned long long no_of_keys
             vector<string> str_keys;
             for (unsigned long long key : keys)
             {
-                str_keys.push_back(UINT64Tostring(key));
+                str_keys.push_back(UINT64Tostring(key, false));
             }
             std::ostream_iterator<string> output_iterator(output_file, "\n");
             std::copy(str_keys.begin(), str_keys.end(), output_iterator);
@@ -242,6 +278,14 @@ std::vector<unsigned long long> generateKeysZipf(unsigned long long no_of_keys, 
         // unsigned long long number = gen();
         unsigned long long rank = zipf_rank_gen(no_of_keys, skew_degree, gen, uni_dist);
         unsigned long long number = ranks[rank];
+        if (data_type == "string")
+        {
+            string num = UINT64Tostring(number, false);
+            if (num == "")
+            {
+                continue;
+            }
+        }
         if (print)
         {
             std::cout << number << std::endl;
@@ -260,7 +304,7 @@ std::vector<unsigned long long> generateKeysZipf(unsigned long long no_of_keys, 
             vector<string> str_keys;
             for (unsigned long long key : keys)
             {
-                str_keys.push_back(UINT64Tostring(key));
+                str_keys.push_back(UINT64Tostring(key, false));
             }
             std::ostream_iterator<string> output_iterator(output_file, "\n");
             std::copy(str_keys.begin(), str_keys.end(), output_iterator);
@@ -301,7 +345,6 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
     unsigned long long left, no_of_querys, no_of_keys, max_range = 0;
     no_of_querys = range_lefts.size() - 1;
     no_of_keys = keys.size();
-    srand(time(NULL));
     if (print)
     {
         std::cout << "\n\nRange queries" << std::endl;
@@ -322,22 +365,35 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
         else
             // left = range_lefts[uni_dist(gen)];
             left = range_lefts[i - 1];
-        double random_from_zero_to_one = uni_dist(gen) * 1.0 / no_of_querys;
-        if (random_from_zero_to_one < ratio_between_point_range)
+        while (1)
         {
-            range_size = 1;
+            double random_from_zero_to_one = uni_dist(gen) * 1.0 / no_of_querys;
+            if (random_from_zero_to_one < ratio_between_point_range)
+            {
+                range_size = 1;
+            }
+            else
+            {
+                range_size = rand() % max_range_size + 1;
+                if (range_size < 2)
+                    range_size = 2; // minimum range size is 2
+            }
+            // range_size = max_range_size;
+            if (data_type == "string")
+            {
+                string num = UINT64Tostring(left + range_size, true);
+                if (num == "")
+                {
+                    continue;
+                }
+            }
+            if (range_size > max_range)
+            {
+                max_range = range_size;
+            }
+            break;
         }
-        else
-        {
-            range_size = rand() % max_range_size + 1;
-            if (range_size < 2)
-                range_size = 2; // minimum range size is 2
-        }
-        // range_size = max_range_size;
-        if (range_size > max_range)
-        {
-            max_range = range_size;
-        }
+
         lower_bound_keys.insert(pair<unsigned long, unsigned long>(left, left + range_size));
         if (print)
         {
@@ -365,6 +421,17 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
             max_range = range_size;
         }
         left = keys[rand() % no_of_keys] - rand() % range_size;
+
+        if (data_type == "string")
+        {
+            string l = UINT64Tostring(left, true);
+            string r = UINT64Tostring(left + range_size, true);
+            if (l == "" || r == "")
+            {
+                i -= 1;
+                continue;
+            }
+        }
         lower_bound_keys.insert(pair<unsigned long, unsigned long>(left, left + range_size));
         if (print)
         {
@@ -377,10 +444,9 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
     std::ofstream output_file2(std::string("../data/upper_bound.txt"));
     if (data_type == "string")
     {
-
         for (auto lower_bound_key : lower_bound_keys)
         {
-            str_lower_bound_keys.insert({UINT64Tostring(lower_bound_key.first), UINT64Tostring(lower_bound_key.second)});
+            str_lower_bound_keys.insert({UINT64Tostring(lower_bound_key.first, true), UINT64Tostring(lower_bound_key.second, true)});
         }
         multimap<string, string>::iterator m_it;
         for (m_it = str_lower_bound_keys.begin(); m_it != str_lower_bound_keys.end(); m_it++)
@@ -510,19 +576,19 @@ int main(int argc, char *argv[])
         vector<unsigned long long> orikeys(size);
         in.read(reinterpret_cast<char *>(orikeys.data()), size * sizeof(uint64_t));
         sort(orikeys.begin(), orikeys.end());
-        cout << orikeys.front() << " "<< orikeys.back() << endl;
+        cout << orikeys.front() << " " << orikeys.back() << endl;
         // random_shuffle(orikeys.begin(), orikeys.end());
         unordered_set<unsigned long long> key_set;
         vector<unsigned long long> keys;
         for (unsigned long long key : orikeys)
         {
-            if(key_set.find(key) != key_set.end())
+            if (key_set.find(key) != key_set.end())
             {
                 continue;
             }
             key_set.insert(key);
             keys.push_back(key);
-            if(keys.size() == entries_num)
+            if (keys.size() == entries_num)
             {
                 break;
             }
