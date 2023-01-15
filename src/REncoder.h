@@ -5,6 +5,10 @@ using namespace std;
 // Use the stack to store the prefixes in verification stage.
 stack<pair<uint64_t, uint64_t>> prefixes;
 
+// Record last inserted prefix to avoid duplicate insertion.
+uint64_t last_p = 0;
+bool first_insert = true;
+
 class RENCODER
 {
 public:
@@ -14,7 +18,9 @@ public:
         hash_num,
         memory,
         L, // Length of key.
-        stored_level;
+        stored_level,
+        start_level,
+        end_level;
     RangeBloomfilter *rbf;
 
     // Create an uninitialized REncoder.
@@ -37,12 +43,16 @@ public:
     void init(uint64_t _memory,
               uint64_t _hash_num,
               uint64_t _L,
-              uint64_t _stored_level = 64)
+              uint64_t _stored_level = 64,
+              uint64_t _start_level = 1,
+              uint64_t _end_level = -1)
     {
         memory = _memory,
         hash_num = _hash_num,
         L = _L;
         stored_level = _stored_level;
+        start_level = _start_level;
+        end_level = _end_level;
         if (MAX_KEY_LENGTH < _L)
         {
             cout << "REncoder memory initialization fail 1.\n";
@@ -57,7 +67,7 @@ public:
     // Serialize REncoder and get its size.
     pair<uint8_t *, size_t> serialize()
     {
-        size_t len = 4 * sizeof(uint64_t);
+        size_t len = 6 * sizeof(uint64_t);
         auto ser = rbf->serialize();
         len += ser.second;
         uint8_t *out = new uint8_t[len];
@@ -69,6 +79,10 @@ public:
         memcpy(pos, &L, sizeof(uint64_t));
         pos += sizeof(uint64_t);
         memcpy(pos, &stored_level, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, &start_level, sizeof(uint64_t));
+        pos += sizeof(uint64_t);
+        memcpy(pos, &end_level, sizeof(uint64_t));
         pos += sizeof(uint64_t);
         memcpy(pos, ser.first, ser.second);
         delete[] ser.first;
@@ -83,7 +97,9 @@ public:
         uint64_t memory = ((uint64_t *)pos)[1];
         uint64_t L = ((uint64_t *)pos)[2];
         uint64_t stored_level = ((uint64_t *)pos)[3];
-        pos += 4 * sizeof(uint64_t);
+        uint64_t start_level = ((uint64_t *)pos)[4];
+        uint64_t end_level = ((uint64_t *)pos)[5];
+        pos += 6 * sizeof(uint64_t);
         pair<RangeBloomfilter *, size_t> tmp = RangeBloomfilter::deserialize(pos);
         size_t len = pos - ser + tmp.second;
         return {new RENCODER(hash_num, memory, L, stored_level, tmp.first), len};
@@ -96,13 +112,21 @@ public:
         int num = keys.size();
         double onerate = 0;
         double pre_onerate = 0;
-        int start_level = 1;
+        int begin_level;
+        if (end_level == -1)
+        {
+            begin_level = start_level;
+        }
+        else
+        {
+            begin_level = end_level - step + 1;
+        }
         while (true)
         {
-            stored_level = start_level + step;
+            stored_level = begin_level + step;
             for (int i = 0; i < num; i++)
             {
-                Insert(keys[i], start_level);
+                Insert(keys[i], begin_level);
             }
             for (int i = 0; i < rbf->counter_num; i++)
             {
@@ -126,28 +150,57 @@ public:
             {
                 break;
             }
-            start_level = stored_level;
+            if (end_level == -1)
+            {
+                begin_level = stored_level;
+            }
+            else
+            {
+                begin_level = begin_level - step;
+                if (begin_level < 1)
+                {
+                    begin_level += step;
+                    break;
+                }
+            }
             pre_onerate = onerate;
             onerate = 0;
         }
-        stored_level -= 1;
+        if (end_level == -1)
+        {
+            stored_level -= 1;
+        }
+        else
+        {
+            start_level = begin_level;
+            stored_level = end_level;
+        }
         return stored_level;
     }
 
 #ifdef USE_SIMD
     // Insertion with SIMD.
 
-    // Insert prefixes between start_level and stored_level.
-    void Insert(uint64_t p, uint64_t start_level)
+    // Insert prefixes between begin_level and stored_level.
+    void Insert(uint64_t p, uint64_t begin_level)
     {
         uint64_t bt[8] = {0};
         uint64_t p0 = p;
-        p >>= (start_level - 1) / 8 * 8;
-        int si = (start_level - 1) / 8 * 8 + 8;
+        p >>= (begin_level - 1) / 8 * 8;
+        if (first_insert)
+        {
+            first_insert = false;
+        }
+        else if (p == last_p)
+        {
+            return;
+        }
+        last_p = p;
+        int si = (begin_level - 1) / 8 * 8 + 8;
         int ei = (stored_level - 2) / 8 * 8 + 8;
         for (int i = si; i <= ei; i += 8)
         {
-            int sl = start_level - i + 8 > 0 ? start_level - i + 8 : 1;
+            int sl = begin_level - i + 8 > 0 ? begin_level - i + 8 : 1;
             int el = stored_level - 1 - i + 8;
             // Encode the prefix to a bitmap.
             memset(bt, 0, sizeof(bt));
@@ -221,17 +274,26 @@ public:
 #else
     // Insertion without SIMD.
 
-    // Insert prefixes between start_level and stored_level.
-    void Insert(uint64_t p, uint64_t start_level)
+    // Insert prefixes between begin_level and stored_level.
+    void Insert(uint64_t p, uint64_t begin_level)
     {
         uint32_t bt = 0;
         uint64_t p0 = p;
-        p >>= (start_level - 1) / 4 * 4;
-        int si = (start_level - 1) / 4 * 4 + 4;
+        p >>= (begin_level - 1) / 4 * 4;
+        if (first_insert)
+        {
+            first_insert = false;
+        }
+        else if (p == last_p)
+        {
+            return;
+        }
+        last_p = p;
+        int si = (begin_level - 1) / 4 * 4 + 4;
         int ei = (stored_level - 2) / 4 * 4 + 4;
         for (int i = si; i <= ei; i += 4)
         {
-            int sl = start_level - i + 4 > 0 ? start_level - i + 4 : 1;
+            int sl = begin_level - i + 4 > 0 ? begin_level - i + 4 : 1;
             int el = stored_level - 1 - i + 4;
             // Encode the prefix to a bitmap.
             bt = 0;
@@ -471,7 +533,7 @@ public:
     // Query Range Bloom Filter for the existence of the prefix.
     bool QueryRBF(uint64_t plen, uint64_t p)
     {
-        if (L - plen >= stored_level)
+        if (L - plen >= stored_level || L - plen < start_level - 1)
         {
             return true;
         }
@@ -498,7 +560,7 @@ public:
     // Query Range Bloom Filter for the existence of the prefix.
     bool QueryRBF(uint64_t plen, uint64_t p)
     {
-        if (L - plen >= stored_level)
+        if (L - plen >= stored_level || L - plen < start_level - 1)
         {
             return true;
         }

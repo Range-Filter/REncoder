@@ -51,7 +51,8 @@ std::string UINT64Tostring(uint64_t s, bool is_bound)
 
 // std::vector<unsigned long long> keys;
 multimap<unsigned long long, unsigned long long> lower_bound_keys;
-multimap<string, string> str_lower_bound_keys;
+vector<pair<unsigned long long, unsigned long long>> lower_bound_keys_vec;
+vector<pair<string, string>> str_lower_bound_keys;
 long double zipfian_sum;
 std::vector<long double> zipfian_sum_prob; // Sum of probabilities
 
@@ -69,6 +70,7 @@ void zipf_clear()
     zipfian_sum_prob.clear();
     lower_bound_keys.clear();
     str_lower_bound_keys.clear();
+    lower_bound_keys_vec.clear();
 }
 void zipf_prepare(double skew_degree, unsigned long long no_of_keys)
 {
@@ -439,6 +441,12 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
                       << std::endl;
         }
     }
+    multimap<unsigned long long, unsigned long long>::iterator m_it;
+    for (m_it = lower_bound_keys.begin(); m_it != lower_bound_keys.end(); m_it++)
+    {
+        lower_bound_keys_vec.push_back({m_it->first,m_it->second});
+    }
+    random_shuffle(lower_bound_keys_vec.begin(), lower_bound_keys_vec.end());
     // copy range bounds to file
     std::ofstream output_file1(std::string("../data/lower_bound.txt"));
     std::ofstream output_file2(std::string("../data/upper_bound.txt"));
@@ -446,26 +454,25 @@ void generateRangeQueries(int key_length, unsigned long long num_queries, unsign
     {
         for (auto lower_bound_key : lower_bound_keys)
         {
-            str_lower_bound_keys.insert({UINT64Tostring(lower_bound_key.first, true), UINT64Tostring(lower_bound_key.second, true)});
+            str_lower_bound_keys.push_back({UINT64Tostring(lower_bound_key.first, true), UINT64Tostring(lower_bound_key.second, true)});
         }
-        multimap<string, string>::iterator m_it;
-        for (m_it = str_lower_bound_keys.begin(); m_it != str_lower_bound_keys.end(); m_it++)
+        // multimap<string, string>::iterator m_it;
+        for (auto m_it : str_lower_bound_keys)
         {
             // output_file1ULL<< m_it->first << "\t" << m_it->second << "\n";
             // std::cout << m_it->first << " " << m_it->second << std::endl;
-            output_file1 << m_it->first << "\n";
-            output_file2 << m_it->second << "\n";
+            output_file1 << m_it.first << "\n";
+            output_file2 << m_it.second << "\n";
         }
     }
     else
     {
-        multimap<unsigned long long, unsigned long long>::iterator m_it;
-        for (m_it = lower_bound_keys.begin(); m_it != lower_bound_keys.end(); m_it++)
+        for (auto m_it : lower_bound_keys_vec)
         {
             // output_file1ULL<< m_it->first << "\t" << m_it->second << "\n";
             // std::cout << m_it->first << " " << m_it->second << std::endl;
-            output_file1 << m_it->first << "\n";
-            output_file2 << m_it->second << "\n";
+            output_file1 << m_it.first << "\n";
+            output_file2 << m_it.second << "\n";
         }
     }
     output_file1.close();
@@ -577,30 +584,39 @@ int main(int argc, char *argv[])
         in.read(reinterpret_cast<char *>(orikeys.data()), size * sizeof(uint64_t));
         sort(orikeys.begin(), orikeys.end());
         cout << orikeys.front() << " " << orikeys.back() << endl;
-        // random_shuffle(orikeys.begin(), orikeys.end());
+        random_shuffle(orikeys.begin(), orikeys.end());
         unordered_set<unsigned long long> key_set;
         vector<unsigned long long> keys;
+        vector<unsigned long long> query_keys;
         for (unsigned long long key : orikeys)
         {
             if (key_set.find(key) != key_set.end())
             {
                 continue;
             }
-            key_set.insert(key);
-            keys.push_back(key);
             if (keys.size() == entries_num)
             {
-                break;
+                key_set.insert(key);
+                query_keys.push_back(key);
             }
+            else
+            {
+                key_set.insert(key);
+                keys.push_back(key);
+            }
+            
         }
-        // sort(keys.begin(), keys.end());
+        cout << "key num: " << keys.size() << endl;
+        cout << "query num: " << query_keys.size() << endl;
+        sort(keys.begin(), keys.end());
         const char *dir = "../data";
         mkdir(dir, 0777);
         std::ofstream output_file(dir + std::string("/key.txt"));
         std::ostream_iterator<unsigned long long> output_iterator(output_file, "\n");
         std::copy(keys.begin(), keys.end(), output_iterator);
         output_file.close();
-        generateRangeQueries(entries_length, no_of_queries, max_range_size, ratio_between_point_range, keys, query_dist_type, correlation_degree, false, empty_rate, data_type);
+        generateRangeQueries(entries_length, no_of_queries, max_range_size, ratio_between_point_range, query_keys, correlated, 0, false, empty_rate, data_type);
+        // generateRangeQueries(entries_length, no_of_queries, max_range_size, ratio_between_point_range, query_keys, uniform, 0, false, empty_rate, data_type);
     }
     // cout << (1ULL << entries_length) - 100 << endl;
     return 0;

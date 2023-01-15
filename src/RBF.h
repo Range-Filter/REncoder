@@ -10,7 +10,7 @@ class RangeBloomfilter
 public:
     static const uint64_t
         MAX_BIT_NUM = (1ll << 32) - 1,
-        MAX_HASH_NUM = 8;
+        MAX_HASH_NUM = 20;
     uint64_t
         hash_num,
         counter_num,
